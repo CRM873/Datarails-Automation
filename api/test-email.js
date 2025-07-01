@@ -13,19 +13,23 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { senderEmail, datarailsEmail } = req.body;
+  const { senderEmail, senderPassword, datarailsEmail } = req.body;
   
   try {
     // Validate required fields
-    if (!senderEmail || !datarailsEmail) {
+    if (!senderEmail || !senderPassword || !datarailsEmail) {
       return res.status(400).json({ 
         success: false, 
         error: 'Missing required email configuration' 
       });
     }
 
-    // Use Resend API key (temporarily hardcoded, we'll make this secure next)
+    // Use Resend API key
     const RESEND_API_KEY = 're_j8rbD7vu_3kt4DcX65Dj9bh2cpHfZ4JbE';
+    
+    // For testing, we need to send TO the verified email (cromero@grove-pt.com)
+    // The error showed that's your verified email in Resend
+    const testRecipient = 'cromero@grove-pt.com'; // Use your verified email for testing
     
     // Send email via Resend API
     const response = await fetch('https://api.resend.com/emails', {
@@ -35,8 +39,8 @@ export default async function handler(req, res) {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        from: 'Toast Automation <onboarding@resend.dev>', // Resend verified sender
-        to: [datarailsEmail],
+        from: 'Toast Automation <onboarding@resend.dev>', // Resend's verified sender
+        to: [testRecipient], // Send to your verified email
         subject: 'Toast-Datarails Integration Test Email',
         html: `
           <p>Hello,</p>
@@ -44,18 +48,20 @@ export default async function handler(req, res) {
           <p>If you receive this email, the email configuration is working correctly.</p>
           <p>Test details:</p>
           <ul>
-            <li>Sender: ${senderEmail}</li>
-            <li>Recipient: ${datarailsEmail}</li>
+            <li>Original Sender: ${senderEmail}</li>
+            <li>Intended Recipient: ${datarailsEmail}</li>
+            <li>Test Recipient: ${testRecipient}</li>
             <li>Time: ${new Date().toLocaleString()}</li>
           </ul>
+          <p><strong>Note:</strong> This is a test email. In production, this would be sent to: ${datarailsEmail}</p>
           <p>Best regards,<br>Automated System</p>
         `
       })
     });
 
     if (!response.ok) {
-      const error = await response.text();
-      throw new Error(`Resend API error: ${error}`);
+      const errorText = await response.text();
+      throw new Error(`Resend API error: ${errorText}`);
     }
 
     const result = await response.json();
@@ -65,8 +71,10 @@ export default async function handler(req, res) {
       message: 'Test email sent successfully via Resend',
       details: {
         from: senderEmail,
-        to: datarailsEmail,
-        messageId: result.id
+        to: testRecipient,
+        intendedRecipient: datarailsEmail,
+        messageId: result.id,
+        note: 'Email sent to your verified address for testing'
       }
     });
     

@@ -102,15 +102,13 @@ export default async function handler(req, res) {
         throw connectionError;
       }
       
-      // Parse date range for file filtering (search recent dates within 7-day retention)
-      const today = new Date();
-      const sevenDaysAgo = new Date(today);
-      sevenDaysAgo.setDate(today.getDate() - 7);
+      // Test for single day - today (July 1st, 2025)
+      const today = new Date('2025-07-01'); // Force today's date for testing
       
-      const start = startDate ? new Date(startDate) : sevenDaysAgo;
+      const start = startDate ? new Date(startDate) : today;
       const end = endDate ? new Date(endDate) : today;
       
-      // Generate YYYYMMDD formatted dates for the search period
+      // Generate YYYYMMDD formatted dates for just the test period
       const searchDates = [];
       for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
         const yyyymmdd = d.getFullYear() + 
@@ -119,24 +117,21 @@ export default async function handler(req, res) {
         searchDates.push(yyyymmdd);
       }
       
-      // Search in Toast's documented structure: /{export_id}/{YYYYMMDD}/
+      // Focus on Toast's documented structure for today: /{export_id}/{YYYYMMDD}/
       const searchPaths = [
         `/${exportId}/`,                          // Root export directory
       ];
       
-      // Add date-specific paths based on Toast documentation
+      // Add today's specific paths
       searchDates.forEach(date => {
         searchPaths.push(`/${exportId}/${date}/`);
       });
       
-      // Also try alternative structures just in case
+      // Add a few alternative structures for completeness
       searchPaths.push(
-        `/${exportId}/2025/07/`,                  // Month folder
-        `/${exportId}/2025/06/`,                  // Previous month
-        `/${exportId}/weekly/`,                   // Weekly exports
-        `/${exportId}/daily/`,                    // Daily exports
-        `/exports/${exportId}/`,                  // Alternative structure
-        `/data/${exportId}/`
+        `/${exportId}/2025/07/01/`,               // Full date path
+        `/${exportId}/daily/`,                    // Daily exports folder
+        `/exports/${exportId}/`,                  // Alternative root
       );
 
       let allFiles = [];

@@ -22,10 +22,13 @@ export default async function handler(req, res) {
       });
     }
 
-    if (!sshKeyContent) {
+    // Use environment variable for SSH key if not provided in request
+    const privateKey = sshKeyContent || process.env.TOAST_SSH_PRIVATE_KEY;
+    
+    if (!privateKey) {
       return res.status(400).json({ 
         success: false, 
-        error: 'SSH key content is required for Toast SFTP connection' 
+        error: 'SSH key not found. Either provide sshKeyContent or set TOAST_SSH_PRIVATE_KEY environment variable' 
       });
     }
 
@@ -34,7 +37,7 @@ export default async function handler(req, res) {
     
     try {
       // Clean up the SSH key - ensure proper formatting
-      let cleanKey = sshKeyContent.trim();
+      let cleanKey = privateKey.trim();
       
       if (!cleanKey.includes('-----BEGIN') && !cleanKey.includes('-----END')) {
         cleanKey = `-----BEGIN OPENSSH PRIVATE KEY-----\n${cleanKey}\n-----END OPENSSH PRIVATE KEY-----`;

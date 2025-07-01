@@ -1,4 +1,4 @@
-// api/test-sftp.js
+// api/test-sftp-fixed.js
 export default async function handler(req, res) {
   // Add CORS headers
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -24,37 +24,90 @@ export default async function handler(req, res) {
       });
     }
 
+    if (!sshKeyContent) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'SSH key content is required for Toast SFTP connection' 
+      });
+    }
+
     // Dynamic import for ssh2-sftp-client
     const { default: SftpClient } = await import('ssh2-sftp-client');
     const sftp = new SftpClient();
     
     try {
-      // Connection configuration
-      const connectionConfig = {
-        host: serverUrl,
-        username: sftpUsername,
-        algorithms: {
-          kex: ['diffie-hellman-group14-sha256', 'diffie-hellman-group16-sha512'],
-          cipher: ['aes128-ctr', 'aes192-ctr', 'aes256-ctr'],
-          serverHostKey: ['ssh-rsa', 'ssh-ed25519'],
-          hmac: ['hmac-sha2-256', 'hmac-sha2-512']
+      // Clean up the SSH key - ensure proper formatting
+      let cleanKey = sshKeyContent.trim();
+      
+      // If key doesn't have proper headers, it might be just the key data
+      if (!cleanKey.includes('-----BEGIN') && !cleanKey.includes('-----END')) {
+        // Try to reconstruct as OpenSSH format
+        cleanKey = `-----BEGIN OPENSSH PRIVATE KEY-----\n${cleanKey}\n-----END OPENSSH PRIVATE KEY-----`;
+      }
+      
+      // Replace escaped newlines with actual newlines
+      cleanKey = cleanKey.replace(/\\n/g, '\n');
+      
+      // Connection configuration with multiple key format attempts
+      const connectionConfigs = [
+        // Try as buffer first
+        {
+          host: serverUrl,
+          username: sftpUsername,
+          privateKey: Buffer.from(cleanKey),
+          algorithms: {
+            kex: ['diffie-hellman-group14-sha256', 'diffie-hellman-group16-sha512'],
+            cipher: ['aes128-ctr', 'aes192-ctr', 'aes256-ctr'],
+            serverHostKey: ['ssh-rsa', 'ssh-ed25519'],
+            hmac: ['hmac-sha2-256', 'hmac-sha2-512']
+          }
+        },
+        // Try as string
+        {
+          host: serverUrl,
+          username: sftpUsername,
+          privateKey: cleanKey,
+          algorithms: {
+            kex: ['diffie-hellman-group14-sha256'],
+            cipher: ['aes128-ctr'],
+            serverHostKey: ['ssh-rsa'],
+            hmac: ['hmac-sha2-256']
+          }
+        },
+        // Try with passphrase as empty string
+        {
+          host: serverUrl,
+          username: sftpUsername,
+          privateKey: cleanKey,
+          passphrase: '',
+          algorithms: {
+            kex: ['diffie-hellman-group14-sha256'],
+            cipher: ['aes128-ctr'],
+            serverHostKey: ['ssh-rsa'],
+            hmac: ['hmac-sha2-256']
+          }
         }
-      };
+      ];
 
-      // Add SSH key if provided
-      if (sshKeyContent) {
-        connectionConfig.privateKey = sshKeyContent;
-      } else {
-        // For testing, we'll try password-based auth
-        // Note: Toast typically uses key-based auth
-        return res.status(400).json({ 
-          success: false, 
-          error: 'SSH key content is required for Toast SFTP connection' 
-        });
+      let connectionError;
+      let connected = false;
+
+      // Try each configuration
+      for (let i = 0; i < connectionConfigs.length; i++) {
+        try {
+          await sftp.connect(connectionConfigs[i]);
+          connected = true;
+          break;
+        } catch (err) {
+          connectionError = err;
+          await sftp.end();
+          continue;
+        }
       }
 
-      // Connect to Toast SFTP
-      await sftp.connect(connectionConfig);
+      if (!connected) {
+        throw connectionError;
+      }
       
       // Test listing the root directory first
       const rootFiles = await sftp.list('/');
@@ -62,6 +115,7 @@ export default async function handler(req, res) {
       // Try to list the export directory
       const exportPath = `/${exportId}/`;
       let exportFiles = [];
+      let actualPath = exportPath;
       
       try {
         exportFiles = await sftp.list(exportPath);
@@ -71,12 +125,14 @@ export default async function handler(req, res) {
           `/${exportId}`,
           `/exports/${exportId}`,
           `/data/${exportId}`,
-          exportId
+          exportId,
+          `${exportId}/`
         ];
         
         for (const path of possiblePaths) {
           try {
             exportFiles = await sftp.list(path);
+            actualPath = path;
             break;
           } catch (e) {
             continue;
@@ -84,28 +140,41 @@ export default async function handler(req, res) {
         }
       }
 
-      // Get recent files (last 7 days)
+      // Get recent files (last 30 days for better chance of finding something)
       const recentFiles = exportFiles.filter(file => {
+        if (!file.name || file.type === 'd') return false; // Skip directories
         const fileDate = new Date(file.modifyTime);
-        const weekAgo = new Date();
-        weekAgo.setDate(weekAgo.getDate() - 7);
-        return fileDate > weekAgo && file.name.includes('.csv');
+        const monthAgo = new Date();
+        monthAgo.setDate(monthAgo.getDate() - 30);
+        return fileDate > monthAgo;
       });
+
+      // Get CSV files specifically
+      const csvFiles = exportFiles.filter(file => 
+        file.name && file.name.toLowerCase().includes('.csv')
+      );
 
       await sftp.end();
       
       res.status(200).json({ 
         success: true, 
-        message: 'SFTP connection successful',
+        message: 'SFTP connection successful!',
         details: {
           server: serverUrl,
           username: sftpUsername,
-          exportPath: exportPath,
+          exportPath: actualPath,
           rootFilesCount: rootFiles.length,
           exportFilesFound: exportFiles.length,
-          recentCsvFiles: recentFiles.length,
-          sampleFiles: recentFiles.slice(0, 5).map(f => ({
+          recentFilesCount: recentFiles.length,
+          csvFilesCount: csvFiles.length,
+          sampleFiles: csvFiles.slice(0, 5).map(f => ({
             name: f.name,
+            size: f.size,
+            modified: new Date(f.modifyTime).toLocaleString()
+          })),
+          allFiles: exportFiles.slice(0, 10).map(f => ({
+            name: f.name,
+            type: f.type,
             size: f.size,
             modified: new Date(f.modifyTime).toLocaleString()
           }))
@@ -125,11 +194,13 @@ export default async function handler(req, res) {
       details: {
         server: serverUrl,
         username: sftpUsername,
+        keyFormat: sshKeyContent ? sshKeyContent.substring(0, 50) + '...' : 'Not provided',
         troubleshooting: [
+          'Try regenerating SSH key in OpenSSH format',
           'Verify server URL is correct',
           'Check username is exactly as provided by Toast',
-          'Ensure SSH key is valid and has proper permissions',
-          'Confirm export ID exists on the server'
+          'Ensure export ID exists on the server',
+          'Contact Toast support to verify key format'
         ]
       }
     });

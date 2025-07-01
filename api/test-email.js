@@ -1,5 +1,5 @@
 // api/test-email.js
-const nodemailer = require('nodemailer');
+import * as nodemailer from 'nodemailer';
 
 export default async function handler(req, res) {
   // Add CORS headers

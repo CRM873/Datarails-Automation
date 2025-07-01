@@ -1,6 +1,5 @@
-// api/test-sftp-fixed.js
+// Replace your api/test-sftp.js with this (based on the working version)
 export default async function handler(req, res) {
-  // Add CORS headers
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
@@ -13,10 +12,9 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { sftpUsername, serverUrl, exportId, sshKeyContent } = req.body;
+  const { sftpUsername, serverUrl, exportId, sshKeyContent, startDate, endDate } = req.body;
   
   try {
-    // Validate required fields
     if (!sftpUsername || !serverUrl || !exportId) {
       return res.status(400).json({ 
         success: false, 
@@ -31,7 +29,6 @@ export default async function handler(req, res) {
       });
     }
 
-    // Dynamic import for ssh2-sftp-client
     const { default: SftpClient } = await import('ssh2-sftp-client');
     const sftp = new SftpClient();
     
@@ -39,18 +36,14 @@ export default async function handler(req, res) {
       // Clean up the SSH key - ensure proper formatting
       let cleanKey = sshKeyContent.trim();
       
-      // If key doesn't have proper headers, it might be just the key data
       if (!cleanKey.includes('-----BEGIN') && !cleanKey.includes('-----END')) {
-        // Try to reconstruct as OpenSSH format
         cleanKey = `-----BEGIN OPENSSH PRIVATE KEY-----\n${cleanKey}\n-----END OPENSSH PRIVATE KEY-----`;
       }
       
-      // Replace escaped newlines with actual newlines
       cleanKey = cleanKey.replace(/\\n/g, '\n');
       
-      // Connection configuration with multiple key format attempts
+      // Use the EXACT same connection logic that worked before
       const connectionConfigs = [
-        // Try as buffer first
         {
           host: serverUrl,
           username: sftpUsername,
@@ -62,7 +55,6 @@ export default async function handler(req, res) {
             hmac: ['hmac-sha2-256', 'hmac-sha2-512']
           }
         },
-        // Try as string
         {
           host: serverUrl,
           username: sftpUsername,
@@ -74,7 +66,6 @@ export default async function handler(req, res) {
             hmac: ['hmac-sha2-256']
           }
         },
-        // Try with passphrase as empty string
         {
           host: serverUrl,
           username: sftpUsername,
@@ -92,7 +83,6 @@ export default async function handler(req, res) {
       let connectionError;
       let connected = false;
 
-      // Try each configuration
       for (let i = 0; i < connectionConfigs.length; i++) {
         try {
           await sftp.connect(connectionConfigs[i]);
@@ -109,72 +99,117 @@ export default async function handler(req, res) {
         throw connectionError;
       }
       
-      // Test listing the root directory first
-      const rootFiles = await sftp.list('/');
+      // Parse date range for file filtering
+      const start = startDate ? new Date(startDate) : new Date('2025-06-23');
+      const end = endDate ? new Date(endDate) : new Date('2025-06-30');
       
-      // Try to list the export directory
-      const exportPath = `/${exportId}/`;
-      let exportFiles = [];
-      let actualPath = exportPath;
-      
-      try {
-        exportFiles = await sftp.list(exportPath);
-      } catch (exportError) {
-        // If exact path doesn't work, try to find it
-        const possiblePaths = [
-          `/${exportId}`,
-          `/exports/${exportId}`,
-          `/data/${exportId}`,
-          exportId,
-          `${exportId}/`
-        ];
-        
-        for (const path of possiblePaths) {
-          try {
-            exportFiles = await sftp.list(path);
-            actualPath = path;
-            break;
-          } catch (e) {
-            continue;
+      // Search in multiple possible date-based directory structures
+      const searchPaths = [
+        `/${exportId}/`,                          
+        `/${exportId}/2025/`,                     
+        `/${exportId}/2025/06/`,                  
+        `/${exportId}/2025/06/23/`,               
+        `/${exportId}/2025/06/24/`,
+        `/${exportId}/2025/06/25/`,
+        `/${exportId}/2025/06/26/`,
+        `/${exportId}/2025/06/27/`,
+        `/${exportId}/2025/06/28/`,
+        `/${exportId}/2025/06/29/`,
+        `/${exportId}/2025/06/30/`,
+        `/${exportId}/20250623/`,                 
+        `/${exportId}/20250624/`,
+        `/${exportId}/20250625/`,
+        `/${exportId}/20250626/`,
+        `/${exportId}/20250627/`,
+        `/${exportId}/20250628/`,
+        `/${exportId}/20250629/`,
+        `/${exportId}/20250630/`,
+        `/${exportId}/weekly/`,                   
+        `/${exportId}/daily/`,                    
+        `/exports/${exportId}/`,                  
+        `/data/${exportId}/`
+      ];
+
+      let allFiles = [];
+      let foundPaths = [];
+
+      // Check each possible path
+      for (const path of searchPaths) {
+        try {
+          const files = await sftp.list(path);
+          if (files && files.length > 0) {
+            foundPaths.push(path);
+            
+            const filesWithPath = files.map(file => ({
+              ...file,
+              fullPath: path + file.name,
+              searchPath: path
+            }));
+            
+            allFiles = allFiles.concat(filesWithPath);
           }
+        } catch (e) {
+          continue;
         }
       }
 
-      // Get recent files (last 30 days for better chance of finding something)
-      const recentFiles = exportFiles.filter(file => {
-        if (!file.name || file.type === 'd') return false; // Skip directories
+      // Filter files by date range
+      const dateRangeFiles = allFiles.filter(file => {
+        if (!file.modifyTime) return false;
         const fileDate = new Date(file.modifyTime);
-        const monthAgo = new Date();
-        monthAgo.setDate(monthAgo.getDate() - 30);
-        return fileDate > monthAgo;
+        return fileDate >= start && fileDate <= end;
       });
 
-      // Get CSV files specifically
-      const csvFiles = exportFiles.filter(file => 
+      // Look for CSV files
+      const csvFiles = allFiles.filter(file => 
         file.name && file.name.toLowerCase().includes('.csv')
+      );
+
+      // Look for sales-related files
+      const salesFiles = allFiles.filter(file => 
+        file.name && (
+          file.name.toLowerCase().includes('sales') ||
+          file.name.toLowerCase().includes('transaction') ||
+          file.name.toLowerCase().includes('revenue') ||
+          file.name.toLowerCase().includes('order')
+        )
       );
 
       await sftp.end();
       
       res.status(200).json({ 
         success: true, 
-        message: 'SFTP connection successful!',
-        details: {
-          server: serverUrl,
-          username: sftpUsername,
-          exportPath: actualPath,
-          rootFilesCount: rootFiles.length,
-          exportFilesFound: exportFiles.length,
-          recentFilesCount: recentFiles.length,
-          csvFilesCount: csvFiles.length,
-          sampleFiles: csvFiles.slice(0, 5).map(f => ({
+        message: 'SFTP file search completed',
+        searchCriteria: {
+          startDate: start.toISOString().split('T')[0],
+          endDate: end.toISOString().split('T')[0],
+          pathsSearched: searchPaths.length,
+          pathsFound: foundPaths.length
+        },
+        results: {
+          totalFilesFound: allFiles.length,
+          filesInDateRange: dateRangeFiles.length,
+          csvFiles: csvFiles.length,
+          salesRelatedFiles: salesFiles.length,
+          pathsWithFiles: foundPaths
+        },
+        files: {
+          inDateRange: dateRangeFiles.slice(0, 10).map(f => ({
             name: f.name,
+            path: f.searchPath,
+            size: f.size,
+            modified: new Date(f.modifyTime).toLocaleString(),
+            type: f.type
+          })),
+          csvFiles: csvFiles.slice(0, 10).map(f => ({
+            name: f.name,
+            path: f.searchPath,
             size: f.size,
             modified: new Date(f.modifyTime).toLocaleString()
           })),
-          allFiles: exportFiles.slice(0, 10).map(f => ({
+          allFiles: allFiles.slice(0, 20).map(f => ({
             name: f.name,
-            type: f.type,
+            path: f.searchPath,
             size: f.size,
             modified: new Date(f.modifyTime).toLocaleString()
           }))
@@ -194,13 +229,10 @@ export default async function handler(req, res) {
       details: {
         server: serverUrl,
         username: sftpUsername,
-        keyFormat: sshKeyContent ? sshKeyContent.substring(0, 50) + '...' : 'Not provided',
         troubleshooting: [
-          'Try regenerating SSH key in OpenSSH format',
-          'Verify server URL is correct',
-          'Check username is exactly as provided by Toast',
-          'Ensure export ID exists on the server',
-          'Contact Toast support to verify key format'
+          'Using same connection method that worked before',
+          'Multiple key format attempts',
+          'Searching for files in date range and various directories'
         ]
       }
     });

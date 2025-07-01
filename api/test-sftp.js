@@ -102,36 +102,42 @@ export default async function handler(req, res) {
         throw connectionError;
       }
       
-      // Parse date range for file filtering
-      const start = startDate ? new Date(startDate) : new Date('2025-06-23');
-      const end = endDate ? new Date(endDate) : new Date('2025-06-30');
+      // Parse date range for file filtering (search recent dates within 7-day retention)
+      const today = new Date();
+      const sevenDaysAgo = new Date(today);
+      sevenDaysAgo.setDate(today.getDate() - 7);
       
-      // Search in multiple possible date-based directory structures
+      const start = startDate ? new Date(startDate) : sevenDaysAgo;
+      const end = endDate ? new Date(endDate) : today;
+      
+      // Generate YYYYMMDD formatted dates for the search period
+      const searchDates = [];
+      for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+        const yyyymmdd = d.getFullYear() + 
+                         String(d.getMonth() + 1).padStart(2, '0') + 
+                         String(d.getDate()).padStart(2, '0');
+        searchDates.push(yyyymmdd);
+      }
+      
+      // Search in Toast's documented structure: /{export_id}/{YYYYMMDD}/
       const searchPaths = [
-        `/${exportId}/`,                          
-        `/${exportId}/2025/`,                     
-        `/${exportId}/2025/06/`,                  
-        `/${exportId}/2025/06/23/`,               
-        `/${exportId}/2025/06/24/`,
-        `/${exportId}/2025/06/25/`,
-        `/${exportId}/2025/06/26/`,
-        `/${exportId}/2025/06/27/`,
-        `/${exportId}/2025/06/28/`,
-        `/${exportId}/2025/06/29/`,
-        `/${exportId}/2025/06/30/`,
-        `/${exportId}/20250623/`,                 
-        `/${exportId}/20250624/`,
-        `/${exportId}/20250625/`,
-        `/${exportId}/20250626/`,
-        `/${exportId}/20250627/`,
-        `/${exportId}/20250628/`,
-        `/${exportId}/20250629/`,
-        `/${exportId}/20250630/`,
-        `/${exportId}/weekly/`,                   
-        `/${exportId}/daily/`,                    
-        `/exports/${exportId}/`,                  
-        `/data/${exportId}/`
+        `/${exportId}/`,                          // Root export directory
       ];
+      
+      // Add date-specific paths based on Toast documentation
+      searchDates.forEach(date => {
+        searchPaths.push(`/${exportId}/${date}/`);
+      });
+      
+      // Also try alternative structures just in case
+      searchPaths.push(
+        `/${exportId}/2025/07/`,                  // Month folder
+        `/${exportId}/2025/06/`,                  // Previous month
+        `/${exportId}/weekly/`,                   // Weekly exports
+        `/${exportId}/daily/`,                    // Daily exports
+        `/exports/${exportId}/`,                  // Alternative structure
+        `/data/${exportId}/`
+      );
 
       let allFiles = [];
       let foundPaths = [];

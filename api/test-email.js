@@ -27,7 +27,7 @@ export default async function handler(req, res) {
     }
     
     // Create email transporter
-    const transporter = nodemailer.createTransporter({
+    const transporter = nodemailer.default.createTransporter({
       service: 'gmail',
       auth: {
         user: senderEmail,

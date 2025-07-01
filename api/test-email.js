@@ -13,62 +13,60 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { senderEmail, senderPassword, datarailsEmail } = req.body;
+  const { senderEmail, datarailsEmail } = req.body;
   
   try {
     // Validate required fields
-    if (!senderEmail || !senderPassword || !datarailsEmail) {
+    if (!senderEmail || !datarailsEmail) {
       return res.status(400).json({ 
         success: false, 
         error: 'Missing required email configuration' 
       });
     }
 
-    // Import nodemailer using require syntax inside the function
-    const nodemailer = require('nodemailer');
+    // Use Resend API key (temporarily hardcoded, we'll make this secure next)
+    const RESEND_API_KEY = 're_j8rbD7vu_3kt4DcX65Dj9bh2cpHfZ4JbE';
     
-    // Create email transporter
-    const transporter = nodemailer.createTransporter({
-      host: 'smtp.gmail.com',
-      port: 587,
-      secure: false, // true for 465, false for other ports
-      auth: {
-        user: senderEmail,
-        pass: senderPassword
-      }
+    // Send email via Resend API
+    const response = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${RESEND_API_KEY}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        from: 'Toast Automation <onboarding@resend.dev>', // Resend verified sender
+        to: [datarailsEmail],
+        subject: 'Toast-Datarails Integration Test Email',
+        html: `
+          <p>Hello,</p>
+          <p>This is a test email from the Toast-Datarails automation system.</p>
+          <p>If you receive this email, the email configuration is working correctly.</p>
+          <p>Test details:</p>
+          <ul>
+            <li>Sender: ${senderEmail}</li>
+            <li>Recipient: ${datarailsEmail}</li>
+            <li>Time: ${new Date().toLocaleString()}</li>
+          </ul>
+          <p>Best regards,<br>Automated System</p>
+        `
+      })
     });
-    
-    // Test the connection
-    await transporter.verify();
-    
-    // Send test email
-    const testMailOptions = {
-      from: senderEmail,
-      to: datarailsEmail,
-      subject: 'Toast-Datarails Integration Test Email',
-      html: `
-        <p>Hello,</p>
-        <p>This is a test email from the Toast-Datarails automation system.</p>
-        <p>If you receive this email, the email configuration is working correctly.</p>
-        <p>Test details:</p>
-        <ul>
-          <li>Sender: ${senderEmail}</li>
-          <li>Recipient: ${datarailsEmail}</li>
-          <li>Time: ${new Date().toLocaleString()}</li>
-        </ul>
-        <p>Best regards,<br>Automated System</p>
-      `
-    };
-    
-    const result = await transporter.sendMail(testMailOptions);
+
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(`Resend API error: ${error}`);
+    }
+
+    const result = await response.json();
     
     res.status(200).json({ 
       success: true, 
-      message: 'Test email sent successfully',
+      message: 'Test email sent successfully via Resend',
       details: {
         from: senderEmail,
         to: datarailsEmail,
-        messageId: result.messageId
+        messageId: result.id
       }
     });
     

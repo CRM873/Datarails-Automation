@@ -1,6 +1,4 @@
 // api/test-email.js
-import * as nodemailer from 'nodemailer';
-
 export default async function handler(req, res) {
   // Add CORS headers
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -25,9 +23,12 @@ export default async function handler(req, res) {
         error: 'Missing required email configuration' 
       });
     }
+
+    // Dynamic import for nodemailer
+    const { default: nodemailer } = await import('nodemailer');
     
     // Create email transporter
-    const transporter = nodemailer.default.createTransporter({
+    const transporter = nodemailer.createTransporter({
       service: 'gmail',
       auth: {
         user: senderEmail,

@@ -78,6 +78,8 @@ export default async function handler(req, res) {
     const endDateStr = endDate.toISOString().split('T')[0];
 
     const { default: SftpClient } = await import('ssh2-sftp-client');
+    // Fixed nodemailer import
+    const nodemailer = await import('nodemailer');
     
     let automationResults = [];
     let overallLog = [];
@@ -178,11 +180,15 @@ export default async function handler(req, res) {
                 consolidatedData = consolidatedData.concat(dataWithMetadata);
                 successfulDays++;
                 totalRecords += dataWithMetadata.length;
+                
+                restaurantResult.log.push(`✓ Found ${dataWithMetadata.length} time entries for ${date}`);
               }
+            } else {
+              restaurantResult.log.push(`⚠ No TimeEntries.csv found for ${date}`);
             }
             
           } catch (dateError) {
-            restaurantResult.log.push(`Warning: No labor data for ${date}`);
+            restaurantResult.log.push(`⚠ Warning: No labor data for ${date} - ${dateError.message}`);
             continue; // Skip missing files
           }
         }
@@ -207,10 +213,8 @@ export default async function handler(req, res) {
           
           restaurantResult.log.push(`✓ Labor Report: ${totalRecords} time entries from ${successfulDays} days`);
           
-          // Send email with labor report
-          const { default: nodemailer } = await import('nodemailer');
-          
-          const transporter = nodemailer.createTransporter({
+          // Send email with labor report - FIXED nodemailer usage
+          const transporter = nodemailer.default.createTransporter({
             service: 'gmail',
             auth: {
               user: emailConfig.senderEmail,
@@ -274,11 +278,11 @@ export default async function handler(req, res) {
           restaurantResult.success = true;
           
         } else {
-          throw new Error('No labor data found for the specified date range');
+          throw new Error(`No labor data found for ${restaurant.name} in the specified date range. Found ${successfulDays} days with data out of ${dates.length} days searched.`);
         }
         
       } catch (restaurantError) {
-        await sftp.end();
+        if (sftp) await sftp.end();
         restaurantResult.error = restaurantError.message;
         restaurantResult.log.push(`✗ Error: ${restaurantError.message}`);
       }
@@ -311,7 +315,8 @@ export default async function handler(req, res) {
         laborRecords: r.laborReport?.records || 0,
         daysProcessed: r.laborReport?.days || 0,
         fileSize: r.laborReport?.size || '0 KB',
-        error: r.error
+        error: r.error,
+        detailedLog: r.log
       })),
       log: overallLog
     });

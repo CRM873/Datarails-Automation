@@ -217,10 +217,14 @@ export default async function handler(req, res) {
             },
             body: JSON.stringify({
               from: 'Toast Labor Reports <onboarding@resend.dev>',
-              to: [restaurant.datarailsEmail], // Send to actual Datarails email
-              subject: `${restaurant.name} - Weekly Labor Report - ${startDateStr} to ${endDateStr}`,
+              to: ['cromero@grove-pt.com'], // Send to your email for now
+              subject: `${restaurant.name} - Weekly Labor Report - ${startDateStr} to ${endDateStr} - FOR DATARAILS: ${restaurant.datarailsEmail}`,
               html: `
                 <h2>${restaurant.name} - Weekly Labor Report</h2>
+                <div style="background-color: #ffeb3b; padding: 10px; border-radius: 5px; margin-bottom: 20px;">
+                  <strong>🚨 ACTION REQUIRED: Please forward this email with attachment to:</strong><br>
+                  <strong>${restaurant.datarailsEmail}</strong>
+                </div>
                 <p><strong>Report Period:</strong> ${startDateStr} to ${endDateStr} (Monday-Sunday)</p>
                 <p><strong>Restaurant:</strong> ${restaurant.name}</p>
                 <p><strong>Export ID:</strong> ${restaurant.exportId}</p>
@@ -264,7 +268,7 @@ export default async function handler(req, res) {
           }
 
           const emailResult = await emailResponse.json();
-          restaurantResult.log.push(`✓ Email sent successfully to ${restaurant.datarailsEmail} (${emailResult.id})`);
+          restaurantResult.log.push(`✓ Email sent successfully to cromero@grove-pt.com (${emailResult.id})`);
           
           restaurantResult.laborReport = {
             filename: laborReport.filename,

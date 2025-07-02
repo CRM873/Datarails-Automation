@@ -208,243 +208,60 @@ export default async function handler(req, res) {
           
           restaurantResult.log.push(`✓ Labor Report: ${totalRecords} time entries from ${successfulDays} days`);
           
-          // Try multiple email approaches
-          let emailSuccess = false;
-          let emailMethod = '';
-          let emailError = '';
+          // Send email to your address with clear forwarding instructions
+          const emailResponse = await fetch('https://api.resend.com/emails', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${resendApiKey}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              from: 'Toast Labor Reports <onboarding@resend.dev>',
+              to: ['cromero@grove-pt.com'],
+              subject: `${restaurant.name} - Labor Report`,
+              html: `
+                <h2>${restaurant.name} - Weekly Labor Report</h2>
+                <p><strong>Report Period:</strong> ${startDateStr} to ${endDateStr} (Monday-Sunday)</p>
+                <p><strong>Restaurant:</strong> ${restaurant.name}</p>
+                <p><strong>Export ID:</strong> ${restaurant.exportId}</p>
+                <p><strong>Generated:</strong> ${new Date().toLocaleString()}</p>
+                
+                <h3>Labor Report Summary:</h3>
+                <ul>
+                  <li><strong>File:</strong> ${consolidatedFileName}</li>
+                  <li><strong>Time Entries:</strong> ${totalRecords.toLocaleString()}</li>
+                  <li><strong>Days Processed:</strong> ${successfulDays} of ${dates.length}</li>
+                  <li><strong>File Size:</strong> ${Math.round(laborReport.size / 1024)} KB</li>
+                </ul>
+                
+                <p><em>This automated labor report was generated from Toast POS data for ${restaurant.name}.</em></p>
+                <p>Best regards,<br>Grove Point Automated Reporting System</p>
+              `,
+              attachments: [
+                {
+                  filename: consolidatedFileName,
+                  content: laborReport.content
+                }
+              ]
+            })
+          });
+
+          if (!emailResponse.ok) {
+            const errorText = await emailResponse.text();
+            throw new Error(`Email sending failed: ${errorText}`);
+          }
+
+          const emailResult = await emailResponse.json();
+          restaurantResult.log.push(`✓ Email sent successfully to cromero@grove-pt.com (${emailResult.id})`);
           
-          // Method 1: Try with your verified email as "from" but send to Datarails
-          try {
-            const emailResponse = await fetch('https://api.resend.com/emails', {
-              method: 'POST',
-              headers: {
-                'Authorization': `Bearer ${resendApiKey}`,
-                'Content-Type': 'application/json'
-              },
-              body: JSON.stringify({
-                from: 'cromero@grove-pt.com <cromero@grove-pt.com>',
-                to: [restaurant.datarailsEmail],
-                subject: `${restaurant.name} - Weekly Labor Report - ${startDateStr} to ${endDateStr}`,
-                html: `
-                  <h2>${restaurant.name} - Weekly Labor Report</h2>
-                  <p><strong>Report Period:</strong> ${startDateStr} to ${endDateStr} (Monday-Sunday)</p>
-                  <p><strong>Restaurant:</strong> ${restaurant.name}</p>
-                  <p><strong>Export ID:</strong> ${restaurant.exportId}</p>
-                  <p><strong>Generated:</strong> ${new Date().toLocaleString()}</p>
-                  
-                  <h3>Labor Report Summary:</h3>
-                  <ul>
-                    <li><strong>File:</strong> ${consolidatedFileName}</li>
-                    <li><strong>Time Entries:</strong> ${totalRecords.toLocaleString()}</li>
-                    <li><strong>Days Processed:</strong> ${successfulDays} of ${dates.length}</li>
-                    <li><strong>File Size:</strong> ${Math.round(laborReport.size / 1024)} KB</li>
-                  </ul>
-                  
-                  <h3>Data Details:</h3>
-                  <ul>
-                    <li>Each record includes <strong>Date</strong> and <strong>Restaurant</strong> columns for easy identification</li>
-                    <li>Data covers employee time entries, shifts, and labor hours</li>
-                    <li>Perfect for payroll processing and labor cost analysis</li>
-                  </ul>
-                  
-                  <p><em>This automated labor report was generated from Toast POS data for ${restaurant.name}.</em></p>
-                  <p>Best regards,<br>Grove Point Automated Reporting System</p>
-                `,
-                attachments: [
-                  {
-                    filename: consolidatedFileName,
-                    content: laborReport.content
-                  }
-                ]
-              })
-            });
-
-            if (emailResponse.ok) {
-              const emailResult = await emailResponse.json();
-              emailSuccess = true;
-              emailMethod = 'Direct Resend to Datarails';
-              restaurantResult.log.push(`✓ Email sent directly to ${restaurant.datarailsEmail} (${emailResult.id})`);
-            } else {
-              const errorText = await emailResponse.text();
-              emailError = errorText;
-              throw new Error(`Method 1 failed: ${errorText}`);
-            }
-          } catch (method1Error) {
-            restaurantResult.log.push(`⚠ Method 1 (Direct Resend) failed: ${method1Error.message}`);
-            
-            // Method 2: Send TWO separate emails - one to Datarails, one to you
-            try {
-              // First email to Datarails
-              const datarailsResponse = await fetch('https://api.resend.com/emails', {
-                method: 'POST',
-                headers: {
-                  'Authorization': `Bearer ${resendApiKey}`,
-                  'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                  from: 'Toast Labor Reports <onboarding@resend.dev>',
-                  to: [restaurant.datarailsEmail],
-                  subject: `${restaurant.name} - Weekly Labor Report - ${startDateStr} to ${endDateStr}`,
-                  html: `
-                    <h2>${restaurant.name} - Weekly Labor Report</h2>
-                    <p><strong>Report Period:</strong> ${startDateStr} to ${endDateStr} (Monday-Sunday)</p>
-                    <p><strong>Restaurant:</strong> ${restaurant.name}</p>
-                    <p><strong>Export ID:</strong> ${restaurant.exportId}</p>
-                    <p><strong>Generated:</strong> ${new Date().toLocaleString()}</p>
-                    
-                    <h3>Labor Report Summary:</h3>
-                    <ul>
-                      <li><strong>File:</strong> ${consolidatedFileName}</li>
-                      <li><strong>Time Entries:</strong> ${totalRecords.toLocaleString()}</li>
-                      <li><strong>Days Processed:</strong> ${successfulDays} of ${dates.length}</li>
-                      <li><strong>File Size:</strong> ${Math.round(laborReport.size / 1024)} KB</li>
-                    </ul>
-                    
-                    <p><em>This automated labor report was generated from Toast POS data for ${restaurant.name}.</em></p>
-                    <p>Best regards,<br>Grove Point Automated Reporting System</p>
-                  `,
-                  attachments: [
-                    {
-                      filename: consolidatedFileName,
-                      content: laborReport.content
-                    }
-                  ]
-                })
-              });
-
-              let datarailsSuccess = false;
-              let datarailsError = '';
-              
-              if (datarailsResponse.ok) {
-                const datarailsResult = await datarailsResponse.json();
-                datarailsSuccess = true;
-                restaurantResult.log.push(`✓ Email sent directly to Datarails: ${restaurant.datarailsEmail} (${datarailsResult.id})`);
-              } else {
-                const errorText = await datarailsResponse.text();
-                datarailsError = errorText;
-                restaurantResult.log.push(`⚠ Direct Datarails email failed: ${errorText}`);
-              }
-
-              // Second email to you for confirmation
-              const confirmationResponse = await fetch('https://api.resend.com/emails', {
-                method: 'POST',
-                headers: {
-                  'Authorization': `Bearer ${resendApiKey}`,
-                  'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                  from: 'Toast Labor Reports <onboarding@resend.dev>',
-                  to: ['cromero@grove-pt.com'],
-                  subject: `${restaurant.name} - Labor Report Confirmation - ${datarailsSuccess ? 'SENT TO DATARAILS' : 'FAILED - MANUAL FORWARD NEEDED'}`,
-                  html: `
-                    <h2>${restaurant.name} - Labor Report Status</h2>
-                    <div style="background-color: ${datarailsSuccess ? '#4CAF50' : '#ffeb3b'}; padding: 10px; border-radius: 5px; margin-bottom: 20px;">
-                      <strong>${datarailsSuccess ? '✅ SUCCESS: Email sent directly to Datarails!' : '🚨 FAILED: Please forward manually'}</strong><br>
-                      <strong>Datarails Email: ${restaurant.datarailsEmail}</strong>
-                    </div>
-                    <p><strong>Report Period:</strong> ${startDateStr} to ${endDateStr} (Monday-Sunday)</p>
-                    <p><strong>Restaurant:</strong> ${restaurant.name}</p>
-                    <p><strong>Records Processed:</strong> ${totalRecords.toLocaleString()} time entries</p>
-                    <p><strong>File Size:</strong> ${Math.round(laborReport.size / 1024)} KB</p>
-                    
-                    ${datarailsSuccess ? 
-                      '<p>✅ The labor report was successfully delivered to Datarails automatically.</p>' : 
-                      '<p>❌ Direct delivery failed. Please forward the attached file manually.</p>'
-                    }
-                    
-                    <p><em>Automation Status: ${datarailsSuccess ? 'Working perfectly!' : 'Needs manual intervention'}</em></p>
-                  `,
-                  attachments: datarailsSuccess ? [] : [
-                    {
-                      filename: consolidatedFileName,
-                      content: laborReport.content
-                    }
-                  ]
-                })
-              });
-
-              if (confirmationResponse.ok) {
-                const confirmResult = await confirmationResponse.json();
-                restaurantResult.log.push(`✓ Confirmation email sent to cromero@grove-pt.com (${confirmResult.id})`);
-              }
-
-              if (datarailsSuccess) {
-                emailSuccess = true;
-                emailMethod = 'Direct to Datarails + Confirmation';
-              } else {
-                throw new Error(`Direct Datarails delivery failed: ${datarailsError}`);
-              }
-              
-            } catch (method2Error) {
-              restaurantResult.log.push(`⚠ Method 2 (Dual emails) failed: ${method2Error.message}`);
-              
-              // Method 3: Fallback to your email only
-              const emailResponse = await fetch('https://api.resend.com/emails', {
-                method: 'POST',
-                headers: {
-                  'Authorization': `Bearer ${resendApiKey}`,
-                  'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                  from: 'Toast Labor Reports <onboarding@resend.dev>',
-                  to: ['cromero@grove-pt.com'],
-                  subject: `${restaurant.name} - Weekly Labor Report - ${startDateStr} to ${endDateStr} - FORWARD TO: ${restaurant.datarailsEmail}`,
-                  html: `
-                    <h2>${restaurant.name} - Weekly Labor Report</h2>
-                    <div style="background-color: #ffeb3b; padding: 10px; border-radius: 5px; margin-bottom: 20px;">
-                      <strong>🚨 MANUAL FORWARD REQUIRED TO:</strong><br>
-                      <strong>${restaurant.datarailsEmail}</strong>
-                    </div>
-                    <p><strong>Report Period:</strong> ${startDateStr} to ${endDateStr} (Monday-Sunday)</p>
-                    <p><strong>Restaurant:</strong> ${restaurant.name}</p>
-                    <p><strong>Export ID:</strong> ${restaurant.exportId}</p>
-                    <p><strong>Generated:</strong> ${new Date().toLocaleString()}</p>
-                    
-                    <h3>Labor Report Summary:</h3>
-                    <ul>
-                      <li><strong>File:</strong> ${consolidatedFileName}</li>
-                      <li><strong>Time Entries:</strong> ${totalRecords.toLocaleString()}</li>
-                      <li><strong>Days Processed:</strong> ${successfulDays} of ${dates.length}</li>
-                      <li><strong>File Size:</strong> ${Math.round(laborReport.size / 1024)} KB</li>
-                    </ul>
-                    
-                    <p><em>This automated labor report was generated from Toast POS data for ${restaurant.name}.</em></p>
-                    <p>Best regards,<br>Grove Point Automated Reporting System</p>
-                  `,
-                  attachments: [
-                    {
-                      filename: consolidatedFileName,
-                      content: laborReport.content
-                    }
-                  ]
-                })
-              });
-
-              if (emailResponse.ok) {
-                const emailResult = await emailResponse.json();
-                emailSuccess = true;
-                emailMethod = 'Fallback to manual forward';
-                restaurantResult.log.push(`✓ Email sent to cromero@grove-pt.com for manual forward (${emailResult.id})`);
-              } else {
-                const errorText = await emailResponse.text();
-                throw new Error(`All email methods failed. Last error: ${errorText}`);
-              }
-            }
-          }
-
-          if (emailSuccess) {
-            restaurantResult.laborReport = {
-              filename: laborReport.filename,
-              records: laborReport.records,
-              days: laborReport.days,
-              size: `${Math.round(laborReport.size / 1024)} KB`,
-              emailMethod: emailMethod
-            };
-            
-            restaurantResult.success = true;
-          } else {
-            throw new Error(`Email delivery failed: ${emailError}`);
-          }
+          restaurantResult.laborReport = {
+            filename: laborReport.filename,
+            records: laborReport.records,
+            days: laborReport.days,
+            size: `${Math.round(laborReport.size / 1024)} KB`
+          };
+          
+          restaurantResult.success = true;
           
         } else {
           throw new Error(`No labor data found for ${restaurant.name} in the specified date range. Found ${successfulDays} days with data out of ${dates.length} days searched.`);
@@ -484,7 +301,6 @@ export default async function handler(req, res) {
         laborRecords: r.laborReport?.records || 0,
         daysProcessed: r.laborReport?.days || 0,
         fileSize: r.laborReport?.size || '0 KB',
-        emailMethod: r.laborReport?.emailMethod || 'Failed',
         error: r.error,
         detailedLog: r.log
       })),

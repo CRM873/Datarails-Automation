@@ -217,7 +217,7 @@ export default async function handler(req, res) {
             },
             body: JSON.stringify({
               from: 'Toast Labor Reports <onboarding@resend.dev>',
-              to: ['cromero@grove-pt.com'], // Send to your email first
+              to: [restaurant.datarailsEmail], // Send to actual Datarails email
               subject: `${restaurant.name} - Weekly Labor Report - ${startDateStr} to ${endDateStr}`,
               html: `
                 <h2>${restaurant.name} - Weekly Labor Report</h2>

@@ -23,7 +23,7 @@ export default async function handler(req, res) {
     }
 
     const privateKey = process.env.TOAST_SSH_PRIVATE_KEY;
-    const resendApiKey = process.env.RESEND_API_KEY;
+    const resendApiKey = process.env.RESEND_API_KEY || 're_jjQPA7WX_4zCHyGEj88pvjBJNKo326Yqt'; // Temporary fallback
     
     if (!privateKey) {
       return res.status(400).json({ 

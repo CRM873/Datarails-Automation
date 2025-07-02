@@ -23,12 +23,19 @@ export default async function handler(req, res) {
     }
 
     const privateKey = process.env.TOAST_SSH_PRIVATE_KEY;
-    const resendApiKey = process.env.RESEND_API_KEY || 're_jjQPA7WX_4zCHyGEj88pvjBJNKo326Yqt'; // Temporary fallback
+    const resendApiKey = process.env.RESEND_API_KEY;
     
     if (!privateKey) {
       return res.status(400).json({ 
         success: false, 
         error: 'SSH key not found in environment variables' 
+      });
+    }
+
+    if (!resendApiKey) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'RESEND_API_KEY not found in environment variables' 
       });
     }
 

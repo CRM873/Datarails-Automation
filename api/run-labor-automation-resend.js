@@ -216,8 +216,8 @@ export default async function handler(req, res) {
               'Content-Type': 'application/json'
             },
             body: JSON.stringify({
-              from: 'Grove Point Labor Reports <cromero@grove-pt.com>',
-              to: [restaurant.datarailsEmail],
+              from: 'Toast Labor Reports <onboarding@resend.dev>',
+              to: ['cromero@grove-pt.com'], // Send to your email first
               subject: `${restaurant.name} - Weekly Labor Report - ${startDateStr} to ${endDateStr}`,
               html: `
                 <h2>${restaurant.name} - Weekly Labor Report</h2>

@@ -78,7 +78,7 @@ export default async function handler(req, res) {
     const endDateStr = endDate.toISOString().split('T')[0];
 
     const { default: SftpClient } = await import('ssh2-sftp-client');
-    // Fixed nodemailer import
+    // Import nodemailer correctly
     const nodemailer = await import('nodemailer');
     
     let automationResults = [];
@@ -213,8 +213,8 @@ export default async function handler(req, res) {
           
           restaurantResult.log.push(`✓ Labor Report: ${totalRecords} time entries from ${successfulDays} days`);
           
-          // Send email with labor report - FIXED nodemailer usage
-          const transporter = nodemailer.default.createTransporter({
+          // Send email with labor report - Fixed nodemailer usage
+          const transporter = nodemailer.createTransporter({
             service: 'gmail',
             auth: {
               user: emailConfig.senderEmail,

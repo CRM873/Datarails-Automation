@@ -1,4 +1,4 @@
-// api/run-labor-automation-direct.js
+// api/run-labor-automation-resend.js
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
@@ -272,9 +272,10 @@ export default async function handler(req, res) {
           } catch (method1Error) {
             restaurantResult.log.push(`⚠ Method 1 (Direct Resend) failed: ${method1Error.message}`);
             
-            // Method 2: Send to your email AND CC to Datarails (if possible)
+            // Method 2: Send TWO separate emails - one to Datarails, one to you
             try {
-              const emailResponse = await fetch('https://api.resend.com/emails', {
+              // First email to Datarails
+              const datarailsResponse = await fetch('https://api.resend.com/emails', {
                 method: 'POST',
                 headers: {
                   'Authorization': `Bearer ${resendApiKey}`,
@@ -282,8 +283,7 @@ export default async function handler(req, res) {
                 },
                 body: JSON.stringify({
                   from: 'Toast Labor Reports <onboarding@resend.dev>',
-                  to: ['cromero@grove-pt.com'],
-                  cc: [restaurant.datarailsEmail], // Try CC to Datarails
+                  to: [restaurant.datarailsEmail],
                   subject: `${restaurant.name} - Weekly Labor Report - ${startDateStr} to ${endDateStr}`,
                   html: `
                     <h2>${restaurant.name} - Weekly Labor Report</h2>
@@ -312,17 +312,71 @@ export default async function handler(req, res) {
                 })
               });
 
-              if (emailResponse.ok) {
-                const emailResult = await emailResponse.json();
-                emailSuccess = true;
-                emailMethod = 'CC to Datarails';
-                restaurantResult.log.push(`✓ Email sent to cromero@grove-pt.com with CC to ${restaurant.datarailsEmail} (${emailResult.id})`);
+              let datarailsSuccess = false;
+              let datarailsError = '';
+              
+              if (datarailsResponse.ok) {
+                const datarailsResult = await datarailsResponse.json();
+                datarailsSuccess = true;
+                restaurantResult.log.push(`✓ Email sent directly to Datarails: ${restaurant.datarailsEmail} (${datarailsResult.id})`);
               } else {
-                const errorText = await emailResponse.text();
-                throw new Error(`Method 2 failed: ${errorText}`);
+                const errorText = await datarailsResponse.text();
+                datarailsError = errorText;
+                restaurantResult.log.push(`⚠ Direct Datarails email failed: ${errorText}`);
               }
+
+              // Second email to you for confirmation
+              const confirmationResponse = await fetch('https://api.resend.com/emails', {
+                method: 'POST',
+                headers: {
+                  'Authorization': `Bearer ${resendApiKey}`,
+                  'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                  from: 'Toast Labor Reports <onboarding@resend.dev>',
+                  to: ['cromero@grove-pt.com'],
+                  subject: `${restaurant.name} - Labor Report Confirmation - ${datarailsSuccess ? 'SENT TO DATARAILS' : 'FAILED - MANUAL FORWARD NEEDED'}`,
+                  html: `
+                    <h2>${restaurant.name} - Labor Report Status</h2>
+                    <div style="background-color: ${datarailsSuccess ? '#4CAF50' : '#ffeb3b'}; padding: 10px; border-radius: 5px; margin-bottom: 20px;">
+                      <strong>${datarailsSuccess ? '✅ SUCCESS: Email sent directly to Datarails!' : '🚨 FAILED: Please forward manually'}</strong><br>
+                      <strong>Datarails Email: ${restaurant.datarailsEmail}</strong>
+                    </div>
+                    <p><strong>Report Period:</strong> ${startDateStr} to ${endDateStr} (Monday-Sunday)</p>
+                    <p><strong>Restaurant:</strong> ${restaurant.name}</p>
+                    <p><strong>Records Processed:</strong> ${totalRecords.toLocaleString()} time entries</p>
+                    <p><strong>File Size:</strong> ${Math.round(laborReport.size / 1024)} KB</p>
+                    
+                    ${datarailsSuccess ? 
+                      '<p>✅ The labor report was successfully delivered to Datarails automatically.</p>' : 
+                      '<p>❌ Direct delivery failed. Please forward the attached file manually.</p>'
+                    }
+                    
+                    <p><em>Automation Status: ${datarailsSuccess ? 'Working perfectly!' : 'Needs manual intervention'}</em></p>
+                  `,
+                  attachments: datarailsSuccess ? [] : [
+                    {
+                      filename: consolidatedFileName,
+                      content: laborReport.content
+                    }
+                  ]
+                })
+              });
+
+              if (confirmationResponse.ok) {
+                const confirmResult = await confirmationResponse.json();
+                restaurantResult.log.push(`✓ Confirmation email sent to cromero@grove-pt.com (${confirmResult.id})`);
+              }
+
+              if (datarailsSuccess) {
+                emailSuccess = true;
+                emailMethod = 'Direct to Datarails + Confirmation';
+              } else {
+                throw new Error(`Direct Datarails delivery failed: ${datarailsError}`);
+              }
+              
             } catch (method2Error) {
-              restaurantResult.log.push(`⚠ Method 2 (CC) failed: ${method2Error.message}`);
+              restaurantResult.log.push(`⚠ Method 2 (Dual emails) failed: ${method2Error.message}`);
               
               // Method 3: Fallback to your email only
               const emailResponse = await fetch('https://api.resend.com/emails', {
